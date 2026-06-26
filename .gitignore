@@ -1,0 +1,4 @@
+resources/*.exe
+*.log
+__pycache__/
+*.pyc
