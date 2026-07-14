@@ -4,7 +4,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCES_DIR = os.path.join(BASE_DIR, "resources")
 
-SUPPORTED_FIREFOX_VERSION = "50.0"
+SUPPORTED_FIREFOX_VERSION = "50.0.1"
 SUPPORTED_JDK_VERSIONS    = ["1.7", "1.8"]
 
 # Local installer paths (instead of internal-repo URLs)
