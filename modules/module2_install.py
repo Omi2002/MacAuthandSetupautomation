@@ -1,20 +1,17 @@
-import subprocess, os, platform
+import subprocess, os, platform, glob
 from config import FIREFOX_INSTALLER_PATH, JDK_INSTALLER_PATH
-
-# ── Firefox ────────────────────────────────────────────────────────────────────
 
 def install_firefox():
     if not os.path.exists(FIREFOX_INSTALLER_PATH):
         raise FileNotFoundError(f"Installer not found: {FIREFOX_INSTALLER_PATH}")
 
-    # Kill any running Firefox before silent install — otherwise NSIS no-ops silently
+    # Kill running Firefox first — NSIS silent install no-ops if Firefox is running
     subprocess.run(["taskkill", "/F", "/IM", "firefox.exe"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     subprocess.run([FIREFOX_INSTALLER_PATH, "/S"], check=True)
     print("Firefox installation complete.")
 
-# ── JDK ────────────────────────────────────────────────────────────────────────
 
 def install_jdk():
     if not os.path.exists(JDK_INSTALLER_PATH):
@@ -25,41 +22,50 @@ def install_jdk():
     print("JDK installation complete.")
 
 
-def _set_java_home_windows():
-    """Set JAVA_HOME and prepend JDK bin to PATH so it wins over older JDKs."""
-    jdk_path = r"C:\Program Files\Java\jdk1.8.0_161"
+def _find_jdk8_path():
+    """Scan all common locations for any JDK 1.8 installation."""
+    search_patterns = [
+        r"C:\Program Files\Java\jdk1.8*",
+        r"C:\Program Files (x86)\Java\jdk1.8*",
+        r"C:\Program Files\OpenLogic\jdk-8*",        # OpenLogic JDK 8
+        r"C:\Program Files\Eclipse Adoptium\jdk-8*", # Adoptium/Temurin JDK 8
+        r"C:\Program Files\Microsoft\jdk-8*",         # Microsoft JDK 8
+    ]
+    for pattern in search_patterns:
+        matches = glob.glob(pattern)
+        if matches:
+            return matches[0]
+    return None
 
-    # Confirm the folder actually exists after install
-    if not os.path.exists(jdk_path):
-        # Fallback: scan for any jdk1.8* folder in Program Files
-        import glob
-        matches = glob.glob(r"C:\Program Files\Java\jdk1.8*")
-        if not matches:
-            print("⚠️  JDK 8 install folder not found — JAVA_HOME not set.")
-            return
-        jdk_path = matches[0]
+
+def _set_java_home_windows():
+    jdk_path = _find_jdk8_path()
+
+    if not jdk_path:
+        print("⚠️  JDK 8 folder not found anywhere — JAVA_HOME not set.")
+        return
+
+    print(f"Found JDK 8 at: {jdk_path}")
 
     # Set machine-wide JAVA_HOME
     subprocess.run(["setx", "JAVA_HOME", jdk_path, "/M"], check=True)
 
-    # Prepend JDK bin to system PATH so it takes priority over jdk-17/jdk-21
-    new_path_entry = os.path.join(jdk_path, "bin")
+    # Prepend JDK 8 bin to PATH so it wins over Oracle redirector and JDK 17/21
+    jdk_bin = os.path.join(jdk_path, "bin")
     current_path = os.environ.get("PATH", "")
     subprocess.run(
-        ["setx", "PATH", f"{new_path_entry};{current_path}", "/M"],
+        ["setx", "PATH", f"{jdk_bin};{current_path}", "/M"],
         check=True
     )
 
-    # Also update current process environment so Module 3 sees it immediately
+    # Update current process immediately so Module 3 sees it without new terminal
     os.environ["JAVA_HOME"] = jdk_path
-    os.environ["PATH"] = f"{new_path_entry};{current_path}"
+    os.environ["PATH"] = f"{jdk_bin};{current_path}"
 
     print(f"JAVA_HOME set to: {jdk_path}")
 
-# ── Entry point ────────────────────────────────────────────────────────────────
 
 def run_installations(validation_result):
-    """Calls install functions only where Module 1 flagged an action."""
     ff  = validation_result["firefox"]
     jdk = validation_result["jdk"]
 
@@ -70,3 +76,9 @@ def run_installations(validation_result):
     if jdk["action"] in ("install", "upgrade"):
         print(f"JDK action required: {jdk['action']}")
         install_jdk()
+
+    # Always attempt to set JAVA_HOME if it's missing,
+    # even if JDK action was None (already installed but HOME not set)
+    if not os.environ.get("JAVA_HOME"):
+        print("JAVA_HOME not set — attempting to locate and set JDK 8...")
+        _set_java_home_windows()

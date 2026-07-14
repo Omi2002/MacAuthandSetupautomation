@@ -1,6 +1,27 @@
 import subprocess, shutil, os, platform
 
 def check_firefox():
+    if platform.system() == "Windows":
+        # Check (x86) FIRST — Firefox 50 is a 32-bit installer, goes to (x86) on 64-bit Windows
+        candidates = [
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+        ]
+        path = next((p for p in candidates if os.path.exists(p)), None)
+    else:
+        path = shutil.which("firefox")
+
+    if not path:
+        return False, None
+
+    try:
+        out = subprocess.check_output(
+            [path, "--version"], stderr=subprocess.STDOUT
+        ).decode().strip()
+        version = out.split()[-1]
+        return True, version
+    except Exception:
+        return True, None
     """Returns (installed: bool, version: str or None)"""
     if platform.system() == "Windows":
         # Check both 64-bit and 32-bit install locations
