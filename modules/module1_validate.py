@@ -2,70 +2,75 @@ import subprocess, shutil, os, platform
 
 def check_firefox():
     """Returns (installed: bool, version: str or None)"""
-    # Windows: check registry path
     if platform.system() == "Windows":
-        path = r"C:\Program Files\Mozilla Firefox\firefox.exe"
+        # Check both 64-bit and 32-bit install locations
+        candidates = [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+        ]
+        path = next((p for p in candidates if os.path.exists(p)), None)
     else:
         path = shutil.which("firefox")
 
-    if not path or not os.path.exists(path):
+    if not path:
         return False, None
 
     try:
         out = subprocess.check_output(
             [path, "--version"], stderr=subprocess.STDOUT
         ).decode().strip()
-        # Output: "Mozilla Firefox 50.0"
-        version = out.split()[-1]
+        version = out.split()[-1]   # "Mozilla Firefox 50.0" → "50.0"
         return True, version
     except Exception:
-        return True, None
+        return True, None   # exists but version unreadable
 
 
 def check_jdk():
     """Returns (installed: bool, version: str or None, java_home: str or None)"""
     java_home = os.environ.get("JAVA_HOME")
-    java_exe  = shutil.which("java")
 
-    if not java_exe and java_home:
-        java_exe = os.path.join(java_home, "bin", "java")
+    # Prefer JAVA_HOME-based java.exe — avoids picking up JDK 17/21 from PATH
+    java_exe = None
+    if java_home:
+        candidate = os.path.join(
+            java_home, "bin",
+            "java.exe" if platform.system() == "Windows" else "java"
+        )
+        if os.path.exists(candidate):
+            java_exe = candidate
+
+    # Fallback: scan PATH
+    if not java_exe:
+        java_exe = shutil.which("java")
 
     if not java_exe or not os.path.exists(java_exe):
         return False, None, java_home
 
     try:
-        # java -version prints to stderr
         result = subprocess.run(
             [java_exe, "-version"],
             stderr=subprocess.PIPE, stdout=subprocess.PIPE
         )
         version_line = result.stderr.decode().splitlines()[0]
-        # e.g. 'java version "1.8.0_202"'
-        version = version_line.split('"')[1]   # "1.8.0_202"
+        version = version_line.split('"')[1]   # 'java version "1.8.0_161"' → "1.8.0_161"
         return True, version, java_home
     except Exception:
         return True, None, java_home
 
 
 def validate_environment():
-    """
-    Returns dict with validation status for both Firefox and JDK.
-    Also returns flags indicating what Module 2 needs to do.
-    """
     from config import SUPPORTED_FIREFOX_VERSION, SUPPORTED_JDK_VERSIONS
 
-    ff_installed, ff_version = check_firefox()
+    ff_installed, ff_version       = check_firefox()
     jdk_installed, jdk_version, java_home = check_jdk()
 
-    # Firefox check
     ff_ok = ff_installed and ff_version == SUPPORTED_FIREFOX_VERSION
     ff_action = None
     if not ff_installed:
         ff_action = "install"
-    elif ff_version != SUPPORTED_FIREFOX_VERSION:
-        ff_action = "upgrade"  # or "downgrade" if higher
+    elif not ff_ok:
+        ff_action = "upgrade"
 
-    # JDK check — version starts with 1.7 or 1.8
     jdk_ok = False
     if jdk_installed and jdk_version:
         for v in SUPPORTED_JDK_VERSIONS:
