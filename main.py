@@ -2,6 +2,7 @@ from modules.module1_validate import validate_environment, check_firefox, check_
 from modules.module2_install  import run_installations
 from modules.module3_verify   import final_verify
 import os, platform
+from modules.module5_config   import run_module5
 
 def main():
     print("=== CBS V2 Auto Authentication Setup ===\n")
@@ -77,6 +78,24 @@ def main():
     else:
         print("\n❌ Setup incomplete. Please check the log and retry.")
         exit(1)
+        
+    #──  Module 5 ──────────────────────────────────────────────────
+    print("\n  [Step 4/4] Machine Configuration...")
+    m5_passed, m5_results = run_module5()
+
+    # Final result
+    print()
+    print("=" * 60)
+    if passed and m5_passed:
+        print("  ✅ SETUP COMPLETE!")
+        print("  Your machine is ready for CBS V2 authentication.")
+        print(f"  Machine IDs captured and logged.")
+    else:
+        print("  ⚠️  SETUP COMPLETED WITH WARNINGS")
+        print("  Please review items above and contact IT if needed.")
+    print("=" * 60)
+    print()
+    os.system("pause")
 
 if __name__ == "__main__":
     main()
