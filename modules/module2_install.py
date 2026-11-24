@@ -1,6 +1,8 @@
 import subprocess, os, platform, glob
 from config import FIREFOX_INSTALLER_PATH, JDK_INSTALLER_PATH
 
+import winreg, ctypes
+ENV_KEY = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 def install_firefox():
     if not os.path.exists(FIREFOX_INSTALLER_PATH):
         raise FileNotFoundError(f"Installer not found: {FIREFOX_INSTALLER_PATH}")
@@ -40,30 +42,23 @@ def _find_jdk8_path():
 
 def _set_java_home_windows():
     jdk_path = _find_jdk8_path()
-
     if not jdk_path:
-        print("⚠️  JDK 8 folder not found anywhere — JAVA_HOME not set.")
+        print("JDK 8 folder not found - JAVA_HOME not set.")
         return
-
-    print(f"Found JDK 8 at: {jdk_path}")
-
-    # Set machine-wide JAVA_HOME
-    subprocess.run(["setx", "JAVA_HOME", jdk_path, "/M"], check=True)
-
-    # Prepend JDK 8 bin to PATH so it wins over Oracle redirector and JDK 17/21
     jdk_bin = os.path.join(jdk_path, "bin")
-    current_path = os.environ.get("PATH", "")
-    subprocess.run(
-        ["setx", "PATH", f"{jdk_bin};{current_path}", "/M"],
-        check=True
-    )
-
-    # Update current process immediately so Module 3 sees it without new terminal
+    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, ENV_KEY, 0,
+                         winreg.KEY_READ | winreg.KEY_WRITE)
+    winreg.SetValueEx(key, "JAVA_HOME", 0, winreg.REG_SZ, jdk_path)
+    current, _ = winreg.QueryValueEx(key, "Path")
+    parts = [p for p in current.split(";")
+             if p and p.lower().rstrip("\\") != jdk_bin.lower().rstrip("\\")]
+    parts.insert(0, jdk_bin)
+    winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, ";".join(parts))
+    winreg.CloseKey(key)
+    ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x1A, 0, "Environment", 2, 5000, None)
     os.environ["JAVA_HOME"] = jdk_path
-    os.environ["PATH"] = f"{jdk_bin};{current_path}"
-
+    os.environ["PATH"] = jdk_bin + ";" + os.environ.get("PATH", "")
     print(f"JAVA_HOME set to: {jdk_path}")
-
 
 def run_installations(validation_result):
     ff  = validation_result["firefox"]
