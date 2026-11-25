@@ -1,101 +1,99 @@
-from modules.module1_validate import validate_environment, check_firefox, check_jdk
-from modules.module2_install  import run_installations
-from modules.module3_verify   import final_verify
-import os, platform
-from modules.module5_config   import run_module5
+import os
+import sys
+import traceback
+
+
+def _console():
+    """UTF-8 console so the check marks display; harmless if unsupported."""
+    if sys.platform == "win32":
+        os.system("chcp 65001 >nul")
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+_console()
+
+import config                                              # noqa: E402
+from modules.module1_validate import validate_environment  # noqa: E402
+from modules.module2_install import run_installations      # noqa: E402
+from modules.module3_verify import final_verify            # noqa: E402
+from modules.module5_config import run_module5             # noqa: E402
+
+LINE = "=" * 60
+
+
+def _pause():
+    if sys.platform == "win32":
+        os.system("pause")
+
+
+def _fail(message, exc=None):
+    print(f"\n  ❌ {message}")
+    if exc is not None:
+        try:
+            with open(os.path.join(config.LOG_DIR, "cbs_error.log"), "a", encoding="utf-8") as f:
+                f.write(traceback.format_exc() + "\n")
+            print(f"     Details saved in {os.path.join(config.LOG_DIR, 'cbs_error.log')}")
+        except Exception:
+            pass
+    print("     Please contact your IT administrator.\n")
+    _pause()
+    sys.exit(1)
+
 
 def main():
-    print("=== CBS V2 Auto Authentication Setup ===\n")
-    print(f"Platform: {platform.system()}")
-    print(f"JAVA_HOME at startup: {os.environ.get('JAVA_HOME', 'NOT SET')}")
-    print()
+    os.system("cls" if os.name == "nt" else "clear")
+    print(LINE)
+    print("       CBS V2 AUTO AUTHENTICATION SETUP")
+    print("       Version 1.0  |  IT Department")
+    print(LINE)
 
-    # ── Module 1 ──────────────────────────────────────────────────
-    print("[Module 1] Checking environment...")
+    # Step 1 - check
+    print("\n  [Step 1/4] Checking Firefox and Java...")
     validation = validate_environment()
+    ff, jdk = validation["firefox"], validation["jdk"]
+    print(f"             Firefox : {ff['version'] or 'not found'}  {'OK' if ff['ok'] else 'needs update'}")
+    print(f"             Java    : {jdk['version'] or 'not found'}  {'OK' if jdk['ok'] else 'needs update'}")
 
-    ff  = validation["firefox"]
-    jdk = validation["jdk"]
-
-    print(f"  Firefox installed : {ff['installed']}")
-    print(f"  Firefox version   : {ff['version']}")
-    print(f"  Firefox ok        : {ff['ok']}")
-    print(f"  Firefox action    : {ff['action']}")
-    print()
-    print(f"  JDK installed     : {jdk['installed']}")
-    print(f"  JDK version       : {jdk['version']}")
-    print(f"  JDK ok            : {jdk['ok']}")
-    print(f"  JDK action        : {jdk['action']}")
-    print(f"  JAVA_HOME         : {jdk['java_home']}")
-    print()
-
-    # ── Firefox path probe ────────────────────────────────────────
-    ff_paths = [
-        r"C:\Program Files\Mozilla Firefox\firefox.exe",
-        r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
-    ]
-    print("Firefox path probe:")
-    for p in ff_paths:
-        print(f"  {p} → exists={os.path.exists(p)}")
-    print()
-
-    # ── JDK path probe ────────────────────────────────────────────
-    import glob, shutil
-    print("JDK path probe:")
-    print(f"  shutil.which('java') → {shutil.which('java')}")
-    java_home = os.environ.get("JAVA_HOME")
-    if java_home:
-        candidate = os.path.join(java_home, "bin", "java.exe")
-        print(f"  JAVA_HOME candidate → {candidate} exists={os.path.exists(candidate)}")
-    jdk8_matches = glob.glob(r"C:\Program Files\Java\jdk1.8*")
-    print(f"  JDK 8 folders found → {jdk8_matches}")
-    print()
-
-    # ── Module 2 ──────────────────────────────────────────────────
-    needs_install = not ff["ok"] or not jdk["ok"]
-    if needs_install:
-        print("[Module 2] Running auto-installation...")
-        run_installations(validation)
+    # Step 2 - install if needed
+    if not ff["ok"] or not jdk["ok"]:
+        print("\n  [Step 2/4] Installing required software - please wait, do not close this window...")
+        try:
+            run_installations(validation)
+        except Exception as e:
+            _fail(f"Installation failed: {e}", e)
     else:
-        print("[Module 2] No installation needed.")
+        print("\n  [Step 2/4] Software is already correct.")
 
-    print()
+    # Step 3 - verify
+    print("\n  [Step 3/4] Verifying installation...")
+    try:
+        passed, _ = final_verify()
+    except Exception as e:
+        _fail(f"Verification failed: {e}", e)
+    if not passed:
+        _fail("Installation could not be verified (see cbs_setup.log).")
 
-    # ── Post-install probe ────────────────────────────────────────
-    print("Post-install environment check:")
-    print(f"  JAVA_HOME now     : {os.environ.get('JAVA_HOME', 'NOT SET')}")
-    print(f"  java via which    : {shutil.which('java')}")
-    for p in ff_paths:
-        print(f"  {p} → exists={os.path.exists(p)}")
-    print()
+    # Step 4 - configuration
+    print("\n  [Step 4/4] Machine configuration...")
+    try:
+        m5_ok, _ = run_module5()
+    except KeyboardInterrupt:
+        _fail("Cancelled by user.")
+    except Exception as e:
+        _fail(f"Configuration failed: {e}", e)
 
-    # ── Module 3 ──────────────────────────────────────────────────
-    print("[Module 3] Final verification...")
-    passed, _ = final_verify()
-
-    if passed:
-        print("\n✅ Setup complete. Ready for CBS V2 authentication.")
+    print("\n" + LINE)
+    if m5_ok:
+        print("  ✅ SETUP COMPLETE - this machine is configured for CBS V2.")
     else:
-        print("\n❌ Setup incomplete. Please check the log and retry.")
-        exit(1)
-        
-    #──  Module 5 ──────────────────────────────────────────────────
-    print("\n  [Step 4/4] Machine Configuration...")
-    m5_passed, m5_results = run_module5()
+        print("  ⚠️  SETUP FINISHED WITH WARNINGS - review the lines marked ⚠️ above.")
+    print(LINE + "\n")
+    _pause()
 
-    # Final result
-    print()
-    print("=" * 60)
-    if passed and m5_passed:
-        print("  ✅ SETUP COMPLETE!")
-        print("  Your machine is ready for CBS V2 authentication.")
-        print(f"  Machine IDs captured and logged.")
-    else:
-        print("  ⚠️  SETUP COMPLETED WITH WARNINGS")
-        print("  Please review items above and contact IT if needed.")
-    print("=" * 60)
-    print()
-    os.system("pause")
 
 if __name__ == "__main__":
     main()

@@ -2,3 +2,10 @@ resources/*.exe
 *.log
 __pycache__/
 *.pyc
+build/
+dist/
+*.spec
+output/
+*.log
+resources/*.exe
+__pycache__/
